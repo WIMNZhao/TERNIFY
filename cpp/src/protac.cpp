@@ -325,7 +325,7 @@ double Protac::computeRMSD(const RDKit::ROMol& mol, int confId1, int confId2) {
     double sum_squared_dist = 0.0;
     int count = 0;
     
-    for (int atom_idx : warhead_atoms_) {
+    for (int atom_idx : flex_warhead_atoms_) {
         if (atom_idx < static_cast<int>(mol.getNumAtoms())) {
             const RDGeom::Point3D& pos1 = conf1.getAtomPos(atom_idx);
             const RDGeom::Point3D& pos2 = conf2.getAtomPos(atom_idx);
@@ -429,6 +429,7 @@ void Protac::output(RDKit::SDWriter& w,
         
         // 从每个集群选择能量最低的构象
         std::vector<size_t> representative_solutions;
+        std::vector<int> cluster_sizes;  // 存储每个代表构象对应的聚类簇大小
         for (const auto& cluster : clusters) {
             if (cluster.empty()) continue;
             
@@ -452,23 +453,29 @@ void Protac::output(RDKit::SDWriter& w,
                                   [best_conf_id](const auto& p) { return p.first == best_conf_id; });
             if (it != conf_to_solution.end()) {
                 representative_solutions.push_back(it->second);
+                cluster_sizes.push_back(cluster.size());
             }
         }
         
-        // 按能量重新排序代表构象
-        std::sort(representative_solutions.begin(), representative_solutions.end(),
-                 [this](size_t i, size_t j) {
-                     return solutions_[i].energy < solutions_[j].energy;
-                 });
+        // 按能量重新排序代表构象（同时保持聚类大小的对应关系）
+        std::vector<std::pair<size_t, int>> solution_cluster_pairs;
+        for (size_t i = 0; i < representative_solutions.size(); ++i) {
+            solution_cluster_pairs.push_back({representative_solutions[i], cluster_sizes[i]});
+        }
+
+        std::sort(solution_cluster_pairs.begin(), solution_cluster_pairs.end(),
+                [this](const auto& a, const auto& b) {
+                    return solutions_[a.first].energy < solutions_[b.first].energy;
+                });
         
         // 输出前nKeep个代表构象
         int output_count = 0;
-        for (size_t rep_idx : representative_solutions) {
+        for (const auto& [rep_idx, cluster_size] : solution_cluster_pairs) {
             if (output_count >= nKeep) break;
             
             const auto& solution = solutions_[rep_idx];
             
-            // 创建分子的副本进行操作
+            // 创建一个临时分子来保存当前构象
             std::unique_ptr<RDKit::ROMol> protac_copy(new RDKit::ROMol(*protac_));
             RDKit::Conformer& conf = protac_copy->getConformer();
             
@@ -491,7 +498,7 @@ void Protac::output(RDKit::SDWriter& w,
             
             // 添加能量分数作为分子属性
             protac_copy->setProp("SCORE", solution.energy);
-            protac_copy->setProp("RANK", output_count + 1);
+            protac_copy->setProp("CLUSTER_SIZE", cluster_size);  // 改为聚类簇大小
             
             // 写入分子
             try {
@@ -1136,9 +1143,9 @@ void Protac::alignProtacToFlexWarhead(RDKit::ROMol* w_flex, bool verbose) {
     RDKit::MatchVectType match_01 = matches_01[0];
     
     // 保存protac_弹头原子索引用于RMSD计算
-    warhead_atoms_.clear();
+    flex_warhead_atoms_.clear();
     for (const auto& pair : match_01) {
-        warhead_atoms_.push_back(pair.second);
+        flex_warhead_atoms_.push_back(pair.second);
     }
     
     // 查找连接点

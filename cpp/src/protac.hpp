@@ -92,7 +92,7 @@ private:
     std::vector<IQHb> q_flex_;
     std::vector<IQHb> q_anchor_;
     std::array<double, 3> translation_;
-    std::vector<int> warhead_atoms_;  // 存储弹头原子的索引，用于RMSD计算
+    std::vector<int> flex_warhead_atoms_;  // 存储弹头原子的索引，用于RMSD计算
     
     // 新增：保存anchor warhead对齐信息
     std::vector<int> anchor_warhead_atoms_;  // 保存anchor warhead原子的索引
