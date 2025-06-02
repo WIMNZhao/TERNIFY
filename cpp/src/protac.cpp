@@ -1017,9 +1017,26 @@ void Protac::outputSingleConformation(const Solution& solution,
     }
     
     // 添加能量分数和其他属性
-    protac_copy->setProp("SCORE", solution.energy);
-    protac_copy->setProp(property_name, property_value);
+    const auto& energy_comp = solution.energy_components;
     
+    // 添加总能量分数和各组分到PROTAC分子属性
+    auto formatDouble = [](double value) -> std::string {
+        std::ostringstream oss;
+        oss << std::fixed << std::setprecision(3) << value;
+        return oss.str();
+    };
+    
+    protac_copy->setProp("Score", formatDouble(solution.energy));
+    protac_copy->setProp("E_Strain", formatDouble(energy_comp.strain_energy));
+    protac_copy->setProp("E_Flex_AnchorProt", formatDouble(energy_comp.qflex_anchorPro_energy));
+    protac_copy->setProp("E_Protein_Protein", formatDouble(energy_comp.protein_protein_energy));
+    protac_copy->setProp("E_Anchor_FlexProt", formatDouble(energy_comp.qanchor_flexPro_energy));
+    
+    // 只有在属性名不为空时才添加额外属性
+    if (!property_name.empty()) {
+        protac_copy->setProp(property_name, property_value);
+    }
+
     // 写入分子
     try {
         w.write(*protac_copy);
@@ -1031,21 +1048,30 @@ void Protac::outputSingleConformation(const Solution& solution,
     // 如果不需要输出蛋白质，直接返回
     if (!fpro_w) return;
 
-    // 获取ref坐标并对齐蛋白质
-    Coords ref;
-    for (int idx : idx_) {
-        if (idx >= static_cast<int>(protac_copy->getNumAtoms())) {
-            std::cerr << "Invalid atom index: " << idx << std::endl;
-            continue;
-        }
-        const RDGeom::Point3D& pos = conf.getAtomPos(idx);
-        ref.push_back({pos.x, pos.y, pos.z});
-    }
-    
+    // 蛋白质输出，在REMARK行中添加详细的能量组分信息
     try {
+        // 需要重新计算蛋白质坐标用于输出
+        std::vector<RDGeom::Point3D> positions;
+        positions.reserve(protac_copy->getNumAtoms());
+        for (size_t i = 0; i < protac_copy->getNumAtoms(); ++i) {
+            positions.push_back(conf.getAtomPos(i));
+        }
+        
+        Coords ref;
+        for (int idx : idx_) {
+            const auto& pos = positions[idx];
+            ref.push_back({pos.x, pos.y, pos.z});
+        }
         Coords coords_pro = Align(protein_.coords, coord_subs_var, ref);
+        
         fpro << "MODEL" << std::setw(9) << model_number << "\n";
-        fpro << "REMARK   1 SCORE " << std::fixed << std::setprecision(3) << solution.energy << "\n";
+        fpro << "REMARK   1 Score            : " << std::fixed << std::setprecision(3) << solution.energy << "\n";
+        fpro << "REMARK   2 Energy Components (kcal/mol):\n";
+        fpro << "REMARK   3 E_Strain         : " << std::fixed << std::setprecision(3) << energy_comp.strain_energy << "\n";
+        fpro << "REMARK   4 E_Flex_AnchorProt: " << std::fixed << std::setprecision(3) << energy_comp.qflex_anchorPro_energy << "\n"; 
+        fpro << "REMARK   5 E_Protein_Protein: " << std::fixed << std::setprecision(3) << energy_comp.protein_protein_energy << "\n"; 
+        fpro << "REMARK   6 E_Anchor_FlexProt: " << std::fixed << std::setprecision(3) << energy_comp.qanchor_flexPro_energy << "\n";
+        
         size_t atom_index = 0;
         for (const auto& line : protein_.struct_data) {
             if (line.substr(0, 4) == "ATOM" || line.substr(0, 6) == "HETATM") {
@@ -1072,103 +1098,73 @@ void Protac::output(RDKit::SDWriter& w,
                    bool fpro_w, 
                    double rmsd_cutoff) {
     try {
-        // 按能量排序
+        if (solutions_.empty()) {
+            std::cout << "No solutions to output." << std::endl;
+            return;
+        }
+
+        if (solutions_.size() == 1) {
+            std::cout << "Only one solution found - skipping clustering and outputting directly." << std::endl;
+            outputSingleConformation(solutions_[0], w, fpro, 1, fpro_w,"", "");
+            return;
+        }
+        
         std::sort(solutions_.begin(), solutions_.end(),
                   [](const Solution& a, const Solution& b) {
                       return a.energy < b.energy;
                   });
         
-        // 根据rmsd_cutoff决定是否进行聚类
-        if (rmsd_cutoff > 0.0) {
-            // 进行聚类处理
-            std::cout << "Performing clustering with RMSD cutoff: " << rmsd_cutoff << " Å" << std::endl;
-        
-            // 创建一个临时分子来保存所有的构象
-            std::unique_ptr<RDKit::RWMol> multi_conf_mol(new RDKit::RWMol(*protac_));
-            std::vector<std::pair<int, size_t>> conf_to_solution; // 保存每个构象对应的solution索引
-        
-            // 创建所有构象
-            for (size_t i = 0; i < solutions_.size(); ++i) {
-                const auto& solution = solutions_[i];
+        if (rmsd_cutoff > 0) {
+            std::cout << "Clustering conformations with RMSD cutoff " << rmsd_cutoff << " Å." << std::endl;
             
-                // 规范化二面角值到[-180, 180]范围
-                std::vector<double> normalized_dihedrals;
-                for (double angle : solution.dihedrals) {
-                    normalized_dihedrals.push_back(normalize_angle(angle));
+            std::shared_ptr<RDKit::ROMol> multi_conf_mol(new RDKit::ROMol(*protac_));
+            multi_conf_mol->clearConformers();
+            
+            // 为每个解决方案创建构象
+            std::vector<std::pair<int, size_t>> conf_to_solution;  // confId -> solutionIndex
+            for (size_t i = 0; i < solutions_.size(); ++i) {
+                std::vector<double> normalized_dihedrals = solutions_[i].dihedrals;
+                for (double& angle : normalized_dihedrals) {
+                    angle = normalize_angle(angle);
                 }
             
-                // 创建新构象
-                RDKit::Conformer conf(multi_conf_mol->getConformer());
+                RDKit::Conformer conf(protac_->getConformer());
                 conf.setId(i);  // 设置构象ID为solution索引
             
-                // 设置二面角
-                bool valid_conformation = true;
                 for (size_t j = 0; j < rot_dihe_.size(); ++j) {
-                    try {
-                        const auto& dihe_j = rot_dihe_[j];
-                        MolTransforms::setDihedralDeg(conf,
-                                                       dihe_j[0],
-                                                       dihe_j[1],
-                                                       dihe_j[2],
-                                                       dihe_j[3],
-                                                       normalized_dihedrals[j]);
-                    } catch (const std::exception& e) {
-                        valid_conformation = false;
-                        break;
-                    }
+                    const auto& dihe_j = rot_dihe_[j];
+                    MolTransforms::setDihedralDeg(conf,
+                                                   dihe_j[0],
+                                                   dihe_j[1],
+                                                   dihe_j[2],
+                                                   dihe_j[3],
+                                                   normalized_dihedrals[j]);
                 }
             
-                // 验证构象中的原子距离是否合理
-                if (valid_conformation) {
-                    multi_conf_mol->addConformer(new RDKit::Conformer(conf), true);
-                    conf_to_solution.push_back(std::make_pair(conf.getId(), i));
-                }
+                multi_conf_mol->addConformer(new RDKit::Conformer(conf), true);
+                conf_to_solution.push_back(std::make_pair(conf.getId(), i));
             }
         
             // 聚类构象
             std::vector<std::vector<int>> clusters = clusterConformers(*multi_conf_mol, rmsd_cutoff);
-        
-            // 从每个集群选择能量最低的构象
-            std::vector<size_t> representative_solutions;
-            std::vector<int> cluster_sizes;  // 存储每个代表构象对应的聚类簇大小
+            std::vector<std::pair<size_t, int>> solution_cluster_pairs;  // {solution_idx, cluster_size}
             for (const auto& cluster : clusters) {
                 if (cluster.empty()) continue;
-            
-                // 在当前集群中找到能量最低的构象
-                int best_conf_id = cluster[0];
-                double best_energy = std::numeric_limits<double>::max();
-                for (int conf_id : cluster) {
-                    auto it = std::find_if(conf_to_solution.begin(), conf_to_solution.end(),
-                                        [conf_id](const auto& p) { return p.first == conf_id; });
-                    if (it != conf_to_solution.end()) {
-                        size_t solution_idx = it->second;
-                        if (solution_idx < solutions_.size() && solutions_[solution_idx].energy < best_energy) {
-                            best_energy = solutions_[solution_idx].energy;
-                            best_conf_id = conf_id;
-                        }
-                    }
-                }
-            
-                // 添加到代表构象列表
+                
+                // 贪婪聚类 + 能量预排序 = 每个聚类的第一个构象就是最低能量的
+                int representative_conf_id = cluster[0];
+                // 找到对应的solution索引
                 auto it = std::find_if(conf_to_solution.begin(), conf_to_solution.end(),
-                                    [best_conf_id](const auto& p) { return p.first == best_conf_id; });
+                                      [representative_conf_id](const auto& p) { 
+                                          return p.first == representative_conf_id; 
+                                      });
+                
                 if (it != conf_to_solution.end()) {
-                    representative_solutions.push_back(it->second);
-                        cluster_sizes.push_back(cluster.size());
-                    }
+                    solution_cluster_pairs.push_back({it->second, static_cast<int>(cluster.size())});
+                }
             }
             
-            // 按能量重新排序代表构象（同时保持聚类大小的对应关系）
-            std::vector<std::pair<size_t, int>> solution_cluster_pairs;
-            for (size_t i = 0; i < representative_solutions.size(); ++i) {
-                solution_cluster_pairs.push_back({representative_solutions[i], cluster_sizes[i]});
-            }
-
-            std::sort(solution_cluster_pairs.begin(), solution_cluster_pairs.end(),
-                    [this](const auto& a, const auto& b) {
-                        return solutions_[a.first].energy < solutions_[b.first].energy;
-                    });
-            
+            // 简单贪婪聚类 + 能量预排序 = 代表构象已经按能量排序，无需重新排序
             std::cout << "Clustering completed. Found " << solution_cluster_pairs.size() << " clusters." << std::endl;
             
             // 输出前nKeep个代表构象
@@ -1181,13 +1177,11 @@ void Protac::output(RDKit::SDWriter& w,
                     output_count++;
                 }
         } else {
-            // 跳过聚类，直接输出前nKeep个构象
             std::cout << "Skipping clustering (RMSD cutoff <= 0). Outputting top " << nKeep << " conformations by energy." << std::endl;
             
             int actual_output = std::min(nKeep, static_cast<int>(solutions_.size()));
             for (int i = 0; i < actual_output; ++i) {
-                outputSingleConformation(solutions_[i], w, fpro, i + 1, fpro_w,
-                                       "RANK", std::to_string(i + 1)); //后面删掉这个RANK信息
+                outputSingleConformation(solutions_[i], w, fpro, i + 1, fpro_w, "", ""); // 不添加额外属性
             }
         }
         
@@ -1197,7 +1191,7 @@ void Protac::output(RDKit::SDWriter& w,
     }
 }
 
-Protac::Solution Protac::sample_single(bool verbose) {
+Protac::Solution Protac::sample_single() {
     std::vector<double> dihe(rot_dihe_.size());
     static std::mt19937 gen(std::random_device{}());
     
@@ -1209,9 +1203,16 @@ Protac::Solution Protac::sample_single(bool verbose) {
         dihe[i] = list_dihe_[i].lowEnerDiheAngles[dist(gen)];
     }
 
-    // Pass the copy to thread_safe_score with verbose parameter
-    double ener = thread_safe_score(dihe, &mol_copy, verbose);
-    return Solution{dihe, ener, std::vector<double>{}};
+    // Use detailed energy calculation
+    auto energy_components = thread_safe_score_detailed(dihe, &mol_copy);
+    
+    Solution solution;
+    solution.dihedrals = dihe;
+    solution.energy = energy_components.total_energy;
+    solution.energy_components = energy_components;
+    solution.parameters = std::vector<double>{};
+
+    return solution;
 }
 
 void Protac::sample(int ntotal, int nsolu, bool verbose) {
@@ -1245,7 +1246,7 @@ void Protac::sample(int ntotal, int nsolu, bool verbose) {
             }
             
             // 执行采样
-            Solution result = sample_single(verbose);
+            Solution result = sample_single();
             
             // 保存结果
             {
@@ -1289,7 +1290,13 @@ Protac::Solution Protac::powell_minimize(const std::vector<double>& initial_gues
         angle = normalize_angle(angle);
     }
     
-    Solution current{normalized_guess, thread_safe_score(normalized_guess, mol_copy), std::vector<double>{}};
+    auto initial_energy_comp = thread_safe_score_detailed(normalized_guess, mol_copy);
+    Solution current;
+    current.dihedrals = normalized_guess;
+    current.energy = initial_energy_comp.total_energy;
+    current.energy_components = initial_energy_comp;
+    current.parameters = std::vector<double>{};
+    
     const int max_iter = 100;
     const int n = initial_guess.size();
     
@@ -1342,7 +1349,9 @@ Protac::Solution Protac::powell_minimize(const std::vector<double>& initial_gues
                     for (double& angle : current.parameters) {
                         angle = normalize_angle(angle);
                     }
-                    current.energy = best_energy;
+                    auto updated_energy_comp = thread_safe_score_detailed(current.parameters, mol_copy);
+                    current.energy = updated_energy_comp.total_energy;
+                    current.energy_components = updated_energy_comp;
                 }
             }
             
@@ -1368,12 +1377,10 @@ Protac::Solution Protac::search_single(const Solution& initial_solution) {
     // 第一阶段参数
     std::vector<double> temperatures = {60.0, 50.0, 40.0, 30.0, 20.0};
     double alpha = 1.1;
-    // 保存最佳解
     Solution best = initial_solution;    
     // 第一阶段：高温搜索
     for (double T : temperatures) {
         alpha *= 0.9;
-        // Powell最小化
         Solution minimized = powell_minimize(best.dihedrals, &mol_copy, 0.01);
         if (minimized.energy < best.energy) {
             best = minimized;
@@ -1397,17 +1404,24 @@ Protac::Solution Protac::search_single(const Solution& initial_solution) {
             }
             
             // 计算能量
-            double score = this->thread_safe_score(current, &mol_copy);
+            auto energy_comp = thread_safe_score_detailed(current, &mol_copy);
+            double score = energy_comp.total_energy;
             // Metropolis准则
             if (score < prev.energy) {
-                prev = Solution{current, score, std::vector<double>{}};
+                prev.dihedrals = current;
+                prev.energy = score;
+                prev.energy_components = energy_comp;
+                prev.parameters = std::vector<double>{};
                 if (score < best.energy) {
                     best = prev;
                 }
             } else {
                 double probability = std::exp((prev.energy - score) / T);
                 if (uniform_dist_(rng_) < probability) {
-                    prev = Solution{current, score, std::vector<double>{}};
+                    prev.dihedrals = current;
+                    prev.energy = score;
+                    prev.energy_components = energy_comp;
+                    prev.parameters = std::vector<double>{};
                 }
             }
         }
@@ -1439,17 +1453,24 @@ Protac::Solution Protac::search_single(const Solution& initial_solution) {
             }
             
             // 计算能量
-            double score = this->thread_safe_score(current, &mol_copy);
+            auto energy_comp = thread_safe_score_detailed(current, &mol_copy);
+            double score = energy_comp.total_energy;
             // Metropolis准则
             if (score < prev.energy) {
-                prev = Solution{current, score, std::vector<double>{}};
+                prev.dihedrals = current;
+                prev.energy = score;
+                prev.energy_components = energy_comp;
+                prev.parameters = std::vector<double>{};
                 if (score < best.energy) {
                     best = prev;
                 }
             } else {
                 double probability = std::exp((prev.energy - score) / T);
                 if (uniform_dist_(rng_) < probability) {
-                    prev = Solution{current, score, std::vector<double>{}};
+                    prev.dihedrals = current;
+                    prev.energy = score;
+                    prev.energy_components = energy_comp;
+                    prev.parameters = std::vector<double>{};
                 }
             }
         }
@@ -1580,9 +1601,7 @@ double Protac::e_intra(const RDKit::ROMol* mol) const {
     return vdw + dihe;
 }
 
-
-
-double Protac::thread_safe_score(const std::vector<double>& dihe, RDKit::ROMol* mol_copy, bool print_info) {
+Protac::EnergyComponents Protac::thread_safe_score_detailed(const std::vector<double>& dihe, RDKit::ROMol* mol_copy) {
     // Use the provided molecule copy instead of creating a new one
     RDKit::Conformer& conf = mol_copy->getConformer();
     
@@ -1611,14 +1630,13 @@ double Protac::thread_safe_score(const std::vector<double>& dihe, RDKit::ROMol* 
         positions.push_back(conf.getAtomPos(i));
     }
 
-    // 计算分子内能量
+    // 1. 计算分子内能量
     double e_in = e_intra(mol_copy) - E_intra_ref_;
     if (e_in > paras["ub_strain"]) {
         e_in = paras["ub_strain"];
     }
 
-    // 计算q_flex与锚定蛋白的相互作用能
-    double e_anchor = 0.0;
+    // 2. 计算q_flex与锚定蛋白的相互作用能
     Coords coors_flex;
     for (const auto& q : q_flex_) {
         coors_flex.push_back({
@@ -1627,21 +1645,18 @@ double Protac::thread_safe_score(const std::vector<double>& dihe, RDKit::ROMol* 
             positions[std::get<0>(q).value()].z
         });
     }
-    e_anchor = GetGridEn(grid_anchor_, coors_flex, q_flex_);
+    double e_anchor = GetGridEn(grid_anchor_, coors_flex, q_flex_);
     
-    // 蛋白质-蛋白质相互作用
-    double e_pp = 0.0;
+    // 3. 蛋白质-蛋白质相互作用
     Coords ref;
     for (int idx : idx_) {
         const auto& pos = positions[idx];
         ref.push_back({pos.x, pos.y, pos.z});
     }
-    
     Coords coords_pro = Align(protein_.coords, coord_subs_var, ref);
-    e_pp = GetGridEn(grid_anchor_, coords_pro, protein_.para);
+    double e_pp = GetGridEn(grid_anchor_, coords_pro, protein_.para);
 
-    // q_anchor与柔性蛋白的相互作用能
-    double e_flex = 0.0;
+    // 4. q_anchor与柔性蛋白的相互作用能
     Coords coors_anchor;
     for (const auto& q : q_anchor_) {
         coors_anchor.push_back({
@@ -1650,16 +1665,20 @@ double Protac::thread_safe_score(const std::vector<double>& dihe, RDKit::ROMol* 
             positions[std::get<0>(q).value()].z
         });
     }
-        
     Coords aligned_coors = Align2(coors_anchor, coord_subs_var, ref, translation_);
-    e_flex = GetGridEn(grid_flex_, aligned_coors, q_anchor_);
+    double e_flex = GetGridEn(grid_flex_, aligned_coors, q_anchor_);
 
-    return e_in + e_anchor + e_pp + e_flex;
+    double total_energy = e_in + e_anchor + e_pp + e_flex;
+    
+    return EnergyComponents(total_energy, e_in, e_anchor, e_pp, e_flex);
 }
 
+double Protac::thread_safe_score(const std::vector<double>& dihe, RDKit::ROMol* mol_copy) {
+    auto energy_components = thread_safe_score_detailed(dihe, mol_copy);
+    return energy_components.total_energy;
+}
 
-
-// 新增score_only功能实现
+// score_only功能实现
 double Protac::score_only(bool verbose) {
     // 对当前分子构象进行评分，不改变二面角
     RDKit::ROMol mol_copy(*protac_);
@@ -1674,7 +1693,7 @@ double Protac::score_only(bool verbose) {
         current_dihedrals.push_back(angle);
     }
     
-    double total_energy = thread_safe_score(current_dihedrals, &mol_copy, true);
+    double total_energy = thread_safe_score(current_dihedrals, &mol_copy);
     
     if (verbose) {
         printEnergyComponents(mol_copy, current_dihedrals, total_energy, false);
@@ -1700,7 +1719,7 @@ double Protac::score_only(const std::vector<double>& dihe, bool verbose) {
         MolTransforms::setDihedralDeg(conf, atoms[0], atoms[1], atoms[2], atoms[3], dihe[j]);
     }
     
-    double total_energy = thread_safe_score(dihe, &mol_copy, true);
+    double total_energy = thread_safe_score(dihe, &mol_copy);
     
     if (verbose) {
         printEnergyComponents(mol_copy, dihe, total_energy, true);

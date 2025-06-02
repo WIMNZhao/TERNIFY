@@ -32,11 +32,25 @@ class Protac {
 public:
     // 构造函数
     Protac(const GRID& grid_anchor, const GRID& grid_flex, int processes = 1);
-    
+
+    // 能量组分结构体
+    struct EnergyComponents {
+        double total_energy = 0.0;
+        double strain_energy = 0.0;        // 分子内应变能量
+        double qflex_anchorPro_energy = 0.0;   // q_flex与锚定蛋白相互作用
+        double protein_protein_energy = 0.0; // 蛋白质-蛋白质相互作用
+        double qanchor_flexPro_energy = 0.0;   // q_anchor与柔性蛋白相互作用
+        
+        EnergyComponents() = default;
+        EnergyComponents(double total, double strain, double qflex_anchorPro, double pp, double qanchor_flexPro)
+            : total_energy(total), strain_energy(strain), qflex_anchorPro_energy(qflex_anchorPro), 
+              protein_protein_energy(pp), qanchor_flexPro_energy(qanchor_flexPro) {}
+    };    
     // 内部结构体定义
     struct Solution {
         std::vector<double> dihedrals;
         double energy;
+        EnergyComponents energy_components;  // 详细能量组分
         std::vector<double> parameters;  // 参数向量
         bool operator<(const Solution& other) const {
             return energy < other.energy;
@@ -50,7 +64,7 @@ public:
               const std::string& fpro_flex,
               bool verbose = false);
     // 采样相关函数
-    Solution sample_single(bool verbose = false);
+    Solution sample_single();
     void sample(int ntotal = 100, int nsolu = 100, bool verbose = false);
     void search(bool verbose = false);
     double e_intra(const RDKit::ROMol* mol) const;
@@ -59,7 +73,9 @@ public:
     // 新增score_only功能
     double score_only(bool verbose = false);
     double score_only(const std::vector<double>& dihe, bool verbose = false);
-    
+    // Thread-safe scoring function with detailed energy components
+    EnergyComponents thread_safe_score_detailed(const std::vector<double>& dihe, RDKit::ROMol* mol_copy);
+        
     // 公有访问器方法
     const std::shared_ptr<RDKit::ROMol>& getProtac() const { return protac_; }
     const std::vector<std::array<int, 4>>& getRotatableDihedrals() const { return rot_dihe_; }
@@ -171,8 +187,8 @@ private:
 
     //
     thread_local static std::unique_ptr<RDKit::ROMol> thread_local_mol_;
-    double thread_safe_score(const std::vector<double>& dihe, RDKit::ROMol* mol_copy, bool print_info = false); // 只声明
-
+    //double thread_safe_score(const std::vector<double>& dihe, RDKit::ROMol* mol_copy, bool print_info = false); // 只声明
+    double thread_safe_score(const std::vector<double>& dihe, RDKit::ROMol* mol_copy);
     static std::mutex output_mutex_;
 
     // Helper methods for conformer clustering
