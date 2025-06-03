@@ -39,7 +39,7 @@ void Protac::init(RDKit::ROMol* protac,  // unaligned protac
                  RDKit::ROMol* w_anch,   //E3 lig
                  RDKit::ROMol* w_flex,   //POI lig
                  const std::string& fpro_flex, // POI protein
-                 bool verbose) {
+                 int verbose) {
     
 
     // 初始化分子, 并优化
@@ -111,8 +111,8 @@ void Protac::calHeavyAtomsCharge(RDKit::ROMol& mol) {
 }
 
 // =============设置坐标系统和读取蛋白质============
-void Protac::setupCoordinateSystem(RDKit::ROMol* w_flex, const std::string& fpro_flex, bool verbose) {
-    if (verbose) {
+void Protac::setupCoordinateSystem(RDKit::ROMol* w_flex, const std::string& fpro_flex, int verbose) {
+    if (verbose > 0 ) {
         std::cout << "Setting up coordinate system..." << std::endl;
     }
     
@@ -129,7 +129,7 @@ void Protac::setupCoordinateSystem(RDKit::ROMol* w_flex, const std::string& fpro
     translation /= coords_flex_conf.size();
     translation_ = {translation.x, translation.y, translation.z};  // 保存平移向量
     
-    if (verbose) {
+    if (verbose > 1) {
         std::cout << "Translation vector: (" << translation.x << ", " << translation.y << ", " << translation.z << ")" << std::endl;
     }
     
@@ -140,20 +140,20 @@ void Protac::setupCoordinateSystem(RDKit::ROMol* w_flex, const std::string& fpro
         coord_subs_var.push_back({point.x, point.y, point.z});
     }
     
-    if (verbose) {
+    if (verbose > 0) {
         std::cout << "Reading protein file: " << fpro_flex << std::endl;
     }
     
     // 读取蛋白质，传入平移向量, w_flex, fpro_flex都不带H
     protein_.ReadProt(fpro_flex, translation_);
     
-    if (verbose) {
+    if (verbose > 0) {
         std::cout << "Coordinate system setup completed\n" << std::endl;
     }
 }
 
 // =============对齐PROTAC到flexible warhead============
-void Protac::alignProtacToFlexWarhead(RDKit::ROMol* w_flex, bool verbose) {
+void Protac::alignProtacToFlexWarhead(RDKit::ROMol* w_flex, int verbose) {
     RDKit::Conformer& conf_protac = protac_->getConformer();
     const RDKit::Conformer& conf_flex = w_flex->getConformer();
     
@@ -204,7 +204,7 @@ void Protac::alignProtacToFlexWarhead(RDKit::ROMol* w_flex, bool verbose) {
         throw std::runtime_error("Could not find a connected unmatched atom for flexible warhead.");
     }
     
-    if (verbose) {
+    if (verbose > 1) {
         std::cout << "Flexible warhead connection: [" << cp_01 << "] - [" << cp_01_neighbor << "]" << std::endl;
     }
     
@@ -281,7 +281,7 @@ void Protac::alignProtacToFlexWarhead(RDKit::ROMol* w_flex, bool verbose) {
         }
     }
 
-    if (verbose) {
+    if (verbose > 1) {
         std::cout << "Flexible warhead minimal matching unit size: " << minimal_pairs.size() << " atoms" << std::endl;
         std::cout << "Required minimum size: " << requiredMinSize << " (CP atom is " 
                   << (isSP3 ? "SP3" : "non-SP3") << ")" << std::endl;
@@ -314,7 +314,7 @@ void Protac::alignProtacToFlexWarhead(RDKit::ROMol* w_flex, bool verbose) {
 }
 
 // 对齐PROTAC到anchor warhead  
-void Protac::alignProtacToAnchorWarhead(RDKit::ROMol* w_anch, bool verbose) {
+void Protac::alignProtacToAnchorWarhead(RDKit::ROMol* w_anch, int verbose) {
     RDKit::Conformer& conf_protac = protac_->getConformer();
     const RDKit::Conformer& conf_anch = w_anch->getConformer();
     
@@ -359,7 +359,7 @@ void Protac::alignProtacToAnchorWarhead(RDKit::ROMol* w_anch, bool verbose) {
         throw std::runtime_error("Could not find a connected unmatched atom for anchor warhead.");
     }
     
-    if (verbose) {
+    if (verbose > 1) {
         std::cout << "Anchor warhead connection: [" << cp_02 << "] - [" << cp_02_neighbor << "]" << std::endl;
     }
     
@@ -397,7 +397,7 @@ void Protac::alignProtacToAnchorWarhead(RDKit::ROMol* w_anch, bool verbose) {
         }
     }
     
-    if (verbose) {
+    if (verbose > 1) {
         std::cout << "Anchor warhead minimal matching unit size: " << minimal_pairs_anch.size() << " atoms" << std::endl;
     }
     
@@ -427,11 +427,11 @@ void Protac::alignProtacToAnchorWarhead(RDKit::ROMol* w_anch, bool verbose) {
 }
 
 // =============识别氢键供体和受体============
-std::pair<std::vector<int>, std::vector<int>> Protac::findHB_DA(bool verbose) {
+std::pair<std::vector<int>, std::vector<int>> Protac::findHB_DA(int verbose) {
     std::vector<int> hb_donors;
     std::vector<int> hb_acceptors;
     
-    if (verbose) {
+    if (verbose > 0) {
         std::cout << "Finding hydrogen bond acceptors..." << std::endl;
     }
     
@@ -445,7 +445,7 @@ std::pair<std::vector<int>, std::vector<int>> Protac::findHB_DA(bool verbose) {
         }
     }
     
-    if (verbose) {
+    if (verbose > 0) {
         std::cout << "Finding hydrogen bond donors..." << std::endl;
     }
     
@@ -459,7 +459,7 @@ std::pair<std::vector<int>, std::vector<int>> Protac::findHB_DA(bool verbose) {
         }
     }
     
-    if (verbose) {
+    if (verbose > 1) {
         std::cout << "Found " << hb_donors.size() << " hydrogen bond donors and " 
                   << hb_acceptors.size() << " acceptors\n" << std::endl;
     }
@@ -469,10 +469,10 @@ std::pair<std::vector<int>, std::vector<int>> Protac::findHB_DA(bool verbose) {
 
 
 // =============计算q_anchor：不在flexible warhead中的原子============
-void Protac::calculateQAnchor(const std::vector<int>& hb_donors, const std::vector<int>& hb_acceptors, bool verbose) {
+void Protac::calculateQAnchor(const std::vector<int>& hb_donors, const std::vector<int>& hb_acceptors, int verbose) {
     q_anchor_.clear();  // 清空之前的数据
     
-    if (verbose) {
+    if (verbose > 0) {
         std::cout << "Calculating q_anchor (excluding flexible warhead atoms)..." << std::endl;
     }
     
@@ -503,16 +503,16 @@ void Protac::calculateQAnchor(const std::vector<int>& hb_donors, const std::vect
         }
     }
     
-    if (verbose) {
+    if (verbose > 1) {
         std::cout << "q_anchor calculated: " << q_anchor_.size() << " atoms\n" << std::endl;
     }
 }
 
 // =============计算q_flex：不在anchor warhead中的原子============
-void Protac::calculateQFlex(const std::vector<int>& hb_donors, const std::vector<int>& hb_acceptors, bool verbose) {
+void Protac::calculateQFlex(const std::vector<int>& hb_donors, const std::vector<int>& hb_acceptors, int verbose) {
     q_flex_.clear();  // 清空之前的数据
     
-    if (verbose) {
+    if (verbose > 0) {
         std::cout << "Calculating q_flex (excluding anchor warhead atoms)..." << std::endl;
     }
     
@@ -543,14 +543,14 @@ void Protac::calculateQFlex(const std::vector<int>& hb_donors, const std::vector
         }
     }
     
-    if (verbose) {
+    if (verbose > 1) {
         std::cout << "q_flex calculated: " << q_flex_.size() << " atoms\n" << std::endl;
     }
 }
 
 // =============查找linker原子============
-std::vector<int> Protac::findLinkerAtoms(bool verbose) {
-    if (verbose) {
+std::vector<int> Protac::findLinkerAtoms(int verbose) {
+    if (verbose > 0) {
         std::cout << "Finding linker atoms..." << std::endl;
     }
     
@@ -572,7 +572,7 @@ std::vector<int> Protac::findLinkerAtoms(bool verbose) {
         }
     }
     
-    if (verbose) {
+    if (verbose > 1) {
         std::cout << "[LINKER] Found " << linker.size() << " linker atoms (out of " 
                   << protac_->getNumAtoms() << " total atoms)\n" << std::endl;
     }
@@ -581,12 +581,12 @@ std::vector<int> Protac::findLinkerAtoms(bool verbose) {
 }
 
 // =============查找可旋转键和构建二面角============
-void Protac::findRotatableDihedrals(const std::vector<int>& linker, bool verbose) {
+void Protac::findRotatableDihedrals(const std::vector<int>& linker, int verbose) {
     // 清空之前的二面角列表
     rot_dihe_.clear();
     
     // 查找可旋转键创建SMARTS模式
-    if (verbose) {
+    if (verbose > 0) {
         std::cout << "Finding rotatable bonds..." << std::endl;
     }
     std::string RotSmarts = "[!$(C(=[N,O,S])-!@[#7H,O,S])&!$([#7H,O,S]-!@C=[N,O,S])&!D1]-&!@[!D1]";
@@ -636,7 +636,7 @@ void Protac::findRotatableDihedrals(const std::vector<int>& linker, bool verbose
         }
     }
     
-    if (verbose) {
+    if (verbose > 1) {
         std::cout << "Found " << rbond.size() << " rotatable bonds" << std::endl;
         std::cout << "Finding dihedrals..." << std::endl;
     }
@@ -676,7 +676,7 @@ void Protac::findRotatableDihedrals(const std::vector<int>& linker, bool verbose
             na[1] != bond.first && na[1] != bond.second) {
             rot_dihe_.push_back({na[0], bond.first, bond.second, na[1]});
         } else {
-            if (verbose) {
+            if (verbose > 0) {
                 std::cerr << "Warning: Skipping invalid dihedral for bond " 
                           << bond.first << "-" << bond.second << std::endl;
             }
@@ -684,7 +684,7 @@ void Protac::findRotatableDihedrals(const std::vector<int>& linker, bool verbose
         }
     }
     
-    if (verbose) {
+    if (verbose > 1) {
         std::cout << "Found " << rot_dihe_.size() << " rotatable dihedrals" << std::endl;
     }
     
@@ -701,7 +701,7 @@ void Protac::findRotatableDihedrals(const std::vector<int>& linker, bool verbose
         warheads.push_back(idx);
     }
     
-    if (verbose) {
+    if (verbose > 0) {
         std::cout << "Processing FF parameters..." << std::endl;
     }
     list(warheads, rbond, verbose); //for list_vdw_, list_dihe_
@@ -746,7 +746,7 @@ std::vector<double> Protac::listTorsion(double grid_step){
 }
 
 //=================== GET FF PARAMETERS ========================
-void Protac::list(const std::vector<int>& warheads, const std::vector<std::pair<int, int>>& rbond, bool print_info) {
+void Protac::list(const std::vector<int>& warheads, const std::vector<std::pair<int, int>>& rbond, int verbose) {
     // 首先检查输入参数的有效性
     if (!protac_) {
         throw std::runtime_error("Protac molecule is null");
@@ -804,7 +804,7 @@ void Protac::list(const std::vector<int>& warheads, const std::vector<std::pair<
     }
 
     // 打印拓扑距离矩阵（可选）
-    if(print_info){
+    if(verbose > 1){
         std::cout << "Topological distance matrix (first 5x5):" << std::endl;
         for (size_t i = 0; i < std::min(n, size_t(5)); ++i) {
             for (size_t j = 0; j < std::min(n, size_t(5)); ++j) {
@@ -1215,9 +1215,9 @@ Protac::Solution Protac::sample_single() {
     return solution;
 }
 
-void Protac::sample(int ntotal, int nsolu, bool verbose) {
+void Protac::sample(int ntotal, int nsolu, int verbose) {
     // 创建任务vector
-    if (verbose) {
+    if (verbose > 0) {
         std::cout << "Ntotal: " << ntotal << std::endl;
     }
     std::vector<std::future<Solution>> futures;
@@ -1283,88 +1283,96 @@ void Protac::sample(int ntotal, int nsolu, bool verbose) {
     search(verbose);
 }
 
-Protac::Solution Protac::powell_minimize(const std::vector<double>& initial_guess, RDKit::ROMol* mol_copy, double tol) {
-    // 规范化初始猜测值
+// 添加目标函数实现
+double Protac::functionForNLopt(const std::vector<double>& x, std::vector<double>& grad, void* data) {
+    auto* opt_data = static_cast<std::pair<Protac*, RDKit::ROMol*>*>(data);
+    Protac* protac = opt_data->first;
+    RDKit::ROMol* mol_copy = opt_data->second;
+    
+    // 计算能量
+    return protac->thread_safe_score(x, mol_copy);
+}
+
+Protac::Solution Protac::energy_minimize(const std::vector<double>& initial_guess, RDKit::ROMol* mol_copy, double tol) {
+    if (initial_guess.size() != rot_dihe_.size()) {
+        throw std::runtime_error("Initial guess size does not match number of rotatable dihedrals");
+    }
+
+    Solution current;
     std::vector<double> normalized_guess = initial_guess;
     for (double& angle : normalized_guess) {
         angle = normalize_angle(angle);
     }
+
+    // 设置优化器
+    nlopt::opt optimizer(nlopt::LN_BOBYQA, normalized_guess.size());
     
-    auto initial_energy_comp = thread_safe_score_detailed(normalized_guess, mol_copy);
-    Solution current;
-    current.dihedrals = normalized_guess;
-    current.energy = initial_energy_comp.total_energy;
-    current.energy_components = initial_energy_comp;
-    current.parameters = std::vector<double>{};
+    // 设置目标函数
+    auto opt_data = std::make_pair(this, mol_copy);
+    optimizer.set_min_objective(functionForNLopt, &opt_data);
     
-    const int max_iter = 100;
-    const int n = initial_guess.size();
+    // 设置边界条件 (-180 到 180度)
+    std::vector<double> lb(normalized_guess.size(), -180.0);
+    std::vector<double> ub(normalized_guess.size(), 180.0);
+    optimizer.set_lower_bounds(lb);
+    optimizer.set_upper_bounds(ub);
     
+    // 设置停止条件
+    optimizer.set_xtol_rel(tol);
+    //optimizer.set_ftol_rel(tol);         // 函数值相对收敛容差， for LN_PRAXIS，LN_SBPLX
+    optimizer.set_maxeval(100); // 最大迭代次数
+    
+    // 执行优化
+    double final_energy;
+    std::vector<double> result = normalized_guess;
     try {
-        for (int iter = 0; iter < max_iter; ++iter) {
-            double initial_energy = current.energy;
-            
-            for (int i = 0; i < n; ++i) {
-                const double phi = (1 + std::sqrt(5.0)) / 2;
-                double a = -2.0;
-                double b = 2.0;
-                double best_energy = current.energy;
-                double best_step = 0.0;
-
-                for (int j = 0; j < 10; ++j) {
-                    double x1 = normalize_angle(b - (b - a) / phi);
-                    double x2 = normalize_angle(a + (b - a) / phi);
-
-                    std::vector<double> guess1 = current.parameters;
-                    std::vector<double> guess2 = current.parameters;
-                    
-                    if (i < static_cast<int>(guess1.size()) && i < static_cast<int>(guess2.size())) {
-                        guess1[i] = normalize_angle(current.parameters[i] + x1);
-                        guess2[i] = normalize_angle(current.parameters[i] + x2);
-                        
-                        for (double& angle : guess1) angle = normalize_angle(angle);
-                        for (double& angle : guess2) angle = normalize_angle(angle);
-                        
-                        double energy1 = thread_safe_score(guess1, mol_copy);
-                        double energy2 = thread_safe_score(guess2, mol_copy);
-
-                        if (energy1 < energy2) {
-                            b = normalize_angle(x2);
-                            if (energy1 < best_energy) {
-                                best_energy = energy1;
-                                best_step = normalize_angle(x1);
-                            }
-                        } else {
-                            a = normalize_angle(x1);
-                            if (energy2 < best_energy) {
-                                best_energy = energy2;
-                                best_step = normalize_angle(x2);
-                            }
-                        }
-                    }
-                }
-
-                if (i < static_cast<int>(current.parameters.size())) {
-                    current.parameters[i] = normalize_angle(current.parameters[i] + best_step);
-                    for (double& angle : current.parameters) {
-                        angle = normalize_angle(angle);
-                    }
-                    auto updated_energy_comp = thread_safe_score_detailed(current.parameters, mol_copy);
-                    current.energy = updated_energy_comp.total_energy;
-                    current.energy_components = updated_energy_comp;
-                }
-            }
-            
-            if (std::abs(initial_energy - current.energy) < tol) {
-                break;
-            }
+        optimizer.optimize(result, final_energy);
+        
+        // 规范化结果
+        for (double& angle : result) {
+            angle = normalize_angle(angle);
         }
+        
+        // 更新Solution对象
+        current.dihedrals = result;
+        current.parameters = result;
+        auto energy_comp = thread_safe_score_detailed(result, mol_copy);
+        current.energy = energy_comp.total_energy;
+        current.energy_components = energy_comp;
+        
     } catch (const std::exception& e) {
-        std::cerr << "Error in powell_minimize: " << e.what() << std::endl;
+        std::cerr << "Error in NLopt optimization: " << e.what() << std::endl;
     }
     
-    for (double& angle : current.parameters) {
+    return current;
+}
+
+Protac::Solution Protac::local_only(const std::vector<double>& dihe, RDKit::ROMol* mol_copy, int verbose) {
+    // 参数验证
+    if (dihe.size() != rot_dihe_.size()) {
+        throw std::runtime_error("Dihedral angles size (" + std::to_string(dihe.size()) 
+                               + ") does not match number of rotatable dihedrals (" 
+                               + std::to_string(rot_dihe_.size()) + ")");
+    }
+
+    Solution current;
+    std::vector<double> normalized_dihedrals = dihe;
+    for (double& angle : normalized_dihedrals) {
         angle = normalize_angle(angle);
+    }
+    
+    current.dihedrals = normalized_dihedrals;
+    current.parameters = normalized_dihedrals;  // 初始化parameters为normalized_dihedrals
+    auto initial_energy_comp = thread_safe_score_detailed(normalized_dihedrals, mol_copy);
+    current.energy = initial_energy_comp.total_energy;
+    current.energy_components = initial_energy_comp;
+
+    // 使用**方法进行局部优化
+    try {
+        current = energy_minimize(normalized_dihedrals, mol_copy, 0.01);
+        printEnergyComponents(*mol_copy, current.energy);
+    } catch (const std::exception& e) {
+        std::cerr << "Error in local_only: " << e.what() << std::endl;
     }
     
     return current;
@@ -1381,7 +1389,8 @@ Protac::Solution Protac::search_single(const Solution& initial_solution) {
     // 第一阶段：高温搜索
     for (double T : temperatures) {
         alpha *= 0.9;
-        Solution minimized = powell_minimize(best.dihedrals, &mol_copy, 0.01);
+        Solution minimized = energy_minimize(best.dihedrals, &mol_copy, 0.01);
+
         if (minimized.energy < best.energy) {
             best = minimized;
         }
@@ -1429,7 +1438,7 @@ Protac::Solution Protac::search_single(const Solution& initial_solution) {
     
     // 第二阶段：低温精细搜索
     {
-        Solution minimized = powell_minimize(best.dihedrals, &mol_copy, 0.01);
+        Solution minimized = energy_minimize(best.dihedrals, &mol_copy, 0.01);
         if (minimized.energy < best.energy) {
             best = minimized;
         }
@@ -1477,7 +1486,7 @@ Protac::Solution Protac::search_single(const Solution& initial_solution) {
     }
     
     // 最终优化
-    Solution final = powell_minimize(best.dihedrals, &mol_copy, 0.01);
+    Solution final = energy_minimize(best.dihedrals, &mol_copy, 0.01);
     if (final.energy < best.energy) {
         best = final;
     }
@@ -1528,7 +1537,7 @@ auto ThreadPool::enqueue(F&& f) -> std::future<typename std::result_of<F()>::typ
 }
 
 // 在 Protac::search() 中使用 ThreadPool
-void Protac::search(bool verbose) {
+void Protac::search(int verbose) {
     int num_threads = std::min(processes_, static_cast<int>(std::thread::hardware_concurrency()));
     ThreadPool pool(num_threads); // 使用 num_threads 创建线程池
     std::vector<std::future<Solution>> futures;
@@ -1543,7 +1552,7 @@ void Protac::search(bool verbose) {
 
     // 准备进度条（仅在verbose模式下）
     std::unique_ptr<ProgressBar> progress_bar;
-    if (verbose) {
+    if (verbose > 0) {
         progress_bar = std::make_unique<ProgressBar>(futures.size());
     }
     
@@ -1551,12 +1560,12 @@ void Protac::search(bool verbose) {
     solutions_.clear();
     for (size_t i = 0; i < futures.size(); ++i) {
         solutions_.push_back(futures[i].get());
-        if (verbose && progress_bar) {
+        if (verbose > 0 && progress_bar) {
             progress_bar->update(i + 1); // 更新进度条，传递当前已完成的任务数
         }
     }
 
-    if (verbose && progress_bar) {
+    if (verbose > 0 && progress_bar) {
         progress_bar->finish(); // 结束进度条
     }
 }
@@ -1679,7 +1688,7 @@ double Protac::thread_safe_score(const std::vector<double>& dihe, RDKit::ROMol* 
 }
 
 // score_only功能实现
-double Protac::score_only(bool verbose) {
+double Protac::score_only(int verbose) {
     // 对当前分子构象进行评分，不改变二面角
     RDKit::ROMol mol_copy(*protac_);
     
@@ -1695,14 +1704,14 @@ double Protac::score_only(bool verbose) {
     
     double total_energy = thread_safe_score(current_dihedrals, &mol_copy);
     
-    if (verbose) {
-        printEnergyComponents(mol_copy, current_dihedrals, total_energy, false);
+    if (verbose > 0) {
+        printEnergyComponents(mol_copy, total_energy);
     }
     
     return total_energy;
 }
 
-double Protac::score_only(const std::vector<double>& dihe, bool verbose) {
+double Protac::score_only(const std::vector<double>& dihe, int verbose) {
     if (dihe.size() != rot_dihe_.size()) {
         throw std::runtime_error("Dihedral vector size (" + std::to_string(dihe.size()) + 
                                ") does not match number of rotatable dihedrals (" + 
@@ -1721,8 +1730,8 @@ double Protac::score_only(const std::vector<double>& dihe, bool verbose) {
     
     double total_energy = thread_safe_score(dihe, &mol_copy);
     
-    if (verbose) {
-        printEnergyComponents(mol_copy, dihe, total_energy, true);
+    if (verbose > 0) {
+        printEnergyComponents(mol_copy, total_energy);
     }
     
     return total_energy;
@@ -1772,28 +1781,8 @@ void Protac::printProtacInfo(){
 
 // 能量组分详细输出的辅助函数
 void Protac::printEnergyComponents(const RDKit::ROMol& mol, 
-                                   const std::vector<double>& dihedrals, 
-                                   double total_energy, 
-                                   bool is_custom_dihedrals) {
+                                   double total_energy) {
     const RDKit::Conformer& conf = mol.getConformer();
-    
-    if (is_custom_dihedrals) {
-        std::cout << "\n=== Score Only Mode (Custom Dihedrals) ===" << std::endl;
-        std::cout << "Evaluating PROTAC with specified dihedral angles..." << std::endl;
-        std::cout << "Specified dihedral angles:" << std::endl;
-    } else {
-        std::cout << "\n=== Score Only Mode ===" << std::endl;
-        std::cout << "Evaluating current PROTAC conformation..." << std::endl;
-        std::cout << "Current dihedral angles:" << std::endl;
-    }
-    
-    // 输出二面角信息
-    for (size_t i = 0; i < rot_dihe_.size(); ++i) {
-        const auto& atoms = rot_dihe_[i];
-        std::cout << "  Dihedral " << i << " [" << atoms[0] << "-" << atoms[1] 
-                  << "-" << atoms[2] << "-" << atoms[3] << "]: " 
-                  << std::fixed << std::setprecision(2) << dihedrals[i] << "°" << std::endl;
-    }
     
     // 计算各能量组分
     std::cout << "\nEnergy components:" << std::endl;

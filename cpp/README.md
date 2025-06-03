@@ -1,7 +1,7 @@
 # TERNIFY: Efficient Sampling of PROTAC-Induced Ternary Complexes
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-2025.05.31-green.svg)]()
+[![Version](https://img.shields.io/badge/version-2025.06.03-green.svg)]()
 
 TERNIFY is a high-performance C++ implementation for efficient sampling and prediction of PROTAC-induced ternary complex structures. It uses advanced molecular modeling techniques to predict how PROTAC molecules bring together E3 ligases and target proteins to form productive ternary complexes.
 
@@ -54,8 +54,9 @@ conda install libboost-devel=1.86.0 -c conda-forge
 #conda install libboost-headers=1.86.0 -c conda-forge
 conda install libboost-python-devel=1.86.0 -c conda-forge  # may be optional
 
-# Install Eigen and CMake
+# Install Eigen, NLopt, CMake
 conda install eigen=3.4.0 -c conda-forge
+conda install nlopt=2.10.0 -c conda-forge
 conda install -c conda-forge gcc_linux-64=12 gxx_linux-64=12 cmake
 conda update -c conda-forge cmake   # ensures cmake >= 3.3, default is 4.0.2
 ```
@@ -157,13 +158,20 @@ N_processes: 8        # Number of CPU threads
 
 # Clustering and thresholds
 RMSD_cutoff: 1.0      # RMSD threshold for clustering (Å)
-Verbose: 1            # Verbose level (0=quiet, 1=detailed)
+
 
 # Score_only mode (align to poi.sdf and e3.sdf,optimize H,then scoring )
 Score_only: 0
 
+#  Optimization only model
+Local_only: 0
+
 # Interface definition (x_min, x_max, y_min, y_max, z_min, z_max)
 Interface: -15.0, 15.0, -15.0, 15.0, -15.0, 15.0
+
+# Debug information
+Verbose: 1            # Verbose level (<1 quiet, >0 moderate, >1 detailed)
+
 ```
 
 ### Parameter Description
@@ -175,7 +183,7 @@ Interface: -15.0, 15.0, -15.0, 15.0, -15.0, 15.0
 | `N_keep`      | Final structures to output           | 100     | 10-1000    |
 | `N_processes` | CPU threads for parallel processing  | 1       | 1-64       |
 | `RMSD_cutoff` | Clustering threshold in Ångströms  | 1.0     | 0.5-5.0    |
-| `Verbose`     | Output verbosity level               | 0       | 0 or 1     |
+| `Verbose`     | Output verbosity level               | 0       | 0-2     |
 
 ### Verbose Modes
 
@@ -214,7 +222,9 @@ TERNIFY calculates the following energy terms:
 - **E_flex**: PROTAC-flexible protein interaction
 - **E_pp**: Protein-protein interaction energy
 
-Total Energy = E_intra + E_anchor + E_flex + E_pp
+$$
+E_{Total Energy} = E_{intra} + E_{anchor} + E_{flex} + E_{pp}
+$$
 
 ## Performance Tips
 

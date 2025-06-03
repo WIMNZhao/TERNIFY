@@ -107,6 +107,7 @@ void read_parameters(const std::string& filename, Parameters& params) {
             else if (key == "N_processes") params.n_processes = std::stoi(value);
             else if (key == "Verbose") params.verbose = std::stoi(value);
             else if (key == "Score_only") params.score_only = (std::stoi(value) != 0);
+            else if (key == "Local_only") params.local_only = (std::stoi(value) != 0);
         }
     }
 }
@@ -124,10 +125,13 @@ void run_ternify(const Parameters& params) {
     std::unique_ptr<RDKit::ROMol> w_flex(w_flex_supplier.next());
 
     if (w_anch && w_flex) {
+        if (params.verbose > 0) {
             std::cout << "READ: Number of atoms in WANCHOR: " << w_anch->getNumAtoms() << std::endl;
             std::cout << "READ: Number of bonds in WANCHOR: " << w_anch->getNumBonds() << std::endl;
             std::cout << "READ: Number of atoms in WFLEX: " << w_flex->getNumAtoms() << std::endl;
             std::cout << "READ: Number of bonds in WFLEX: " << w_flex->getNumBonds() << std::endl;
+        }
+        std::cout << "Warhead molecules read successfully!" << std::endl;
     }
     else {
         throw std::runtime_error("Failed to read warhead molecules");
@@ -223,10 +227,11 @@ void run_ternify(const Parameters& params) {
         mol = std::unique_ptr<RDKit::ROMol>(protacs_supplier[protac_index]);
         // Check if the molecule was successfully read and matches the substructure
         if (mol) {
-            std::cout << "\n=== Processing PROTAC molecule " << (protac_index + 1) << " of " << total_protacs << " ===" << std::endl;
-            std::cout << "READ: Number of atoms in protac: " << mol->getNumAtoms() << std::endl;
-            std::cout << "READ: Number of bonds in protac: " << mol->getNumBonds() << std::endl;
-            
+            if (params.verbose > 0) {
+                std::cout << "\n=== Processing PROTAC molecule " << (protac_index + 1) << " of " << total_protacs << " ===" << std::endl;
+                std::cout << "READ: Number of atoms in protac: " << mol->getNumAtoms() << std::endl;
+                std::cout << "READ: Number of bonds in protac: " << mol->getNumBonds() << std::endl;
+            }
             if (RDKit::SubstructMatch(*mol, *w_anch).empty() || 
                 RDKit::SubstructMatch(*mol, *w_flex).empty() ){
                 std::cout << "WARNING: Skipping molecule " << protac_index + 1 << ": this protac does not match substructures with anch/flex." << std::endl;
@@ -269,37 +274,58 @@ void run_ternify(const Parameters& params) {
             std::cout << "Initializing protac..." << std::endl;
             // Initialize Protac object with the current molecule and other parameters
             PROTac.init(mol.get(), w_anch.get(), w_flex.get(),
-                    params.protein_flex_file, params.verbose > 0);
+                    params.protein_flex_file, params.verbose);
             // Print Protac information based on verbose setting
-            if (params.verbose > 0) {
+            if (params.verbose > 1) {
                 std::cout << "Verbose mode enabled (level: " << params.verbose << ")" << std::endl;
                 PROTac.printProtacInfo();
             }
 
-            if (params.score_only) {
+            if (params.score_only || params.local_only) {
                 std::cout << "Score Only Mode Enabled..." << std::endl;
-                double energy = PROTac.score_only(params.verbose > 0);
+                double energy = PROTac.score_only(!params.local_only);
                 std::cout << "Final energy score: " << std::fixed << std::setprecision(3) << energy << " kcal/mol" << std::endl;
                 
                 // 在score_only模式下，我们不需要采样和搜索，但可以输出当前构象
                 std::cout << "Saving current conformation to output..." << std::endl;
-                // 创建一个简单的solution用于输出
+                
+                // 创建一个包含详细能量组分的solution
                 Protac::Solution current_solution;
                 const RDKit::Conformer& conf = PROTac.getProtac()->getConformer();
                 const auto& rot_dihe = PROTac.getRotatableDihedrals();
+                
+                // 获取当前二面角
                 for (size_t i = 0; i < rot_dihe.size(); ++i) {
                     const auto& atoms = rot_dihe[i];
                     double angle = MolTransforms::getDihedralDeg(conf, atoms[0], atoms[1], atoms[2], atoms[3]);
                     current_solution.dihedrals.push_back(angle);
                 }
-                current_solution.energy = energy;
+                
+                // 使用详细的能量计算来获取各组分
+                RDKit::ROMol mol_copy(*PROTac.getProtac());
+                auto energy_components = PROTac.thread_safe_score_detailed(current_solution.dihedrals, &mol_copy);
+                
+                    current_solution.energy = energy_components.total_energy;
+                    current_solution.energy_components = energy_components;
+                current_solution.parameters = std::vector<double>{};
                 
                 // 清空solutions_并添加当前解
                 PROTac.clearSolutions();
                 PROTac.addSolution(current_solution);
+                if (params.local_only) {
+                    std::cout << "Local Only Mode Enabled..." << std::endl;
+                    auto local_solution = PROTac.local_only(current_solution.dihedrals, &mol_copy);
+                    auto energy_components = PROTac.thread_safe_score_detailed(local_solution.dihedrals, &mol_copy);
+                    local_solution.energy = energy_components.total_energy;
+                    local_solution.energy_components = energy_components;
+                    local_solution.parameters = std::vector<double>{};
+                    PROTac.clearSolutions();
+                    PROTac.addSolution(local_solution);
+                    std::cout << "Final energy score (local): " << std::fixed << std::setprecision(3) << local_solution.energy << " kcal/mol" << std::endl;
+                }
             } else {
                 std::cout << "Sampling and Searching..." << std::endl;
-                PROTac.sample(params.n_ini, params.n_search, params.verbose > 0);
+                PROTac.sample(params.n_ini, params.n_search, params.verbose);
             }
         
             std::cout << "Writing output..." << std::endl;

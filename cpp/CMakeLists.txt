@@ -26,11 +26,14 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 
 # set rdkit lib !!!!
-link_directories(/opt/anaconda3/envs/ternify/lib)
-set(RDKIT_DIR "/opt/anaconda3/envs/ternify/")
+set(CONDA_ENV "/opt/anaconda3/envs/ternify/")
+link_directories(${CONDA_ENV}/lib)
+set(RDKIT_DIR ${CONDA_ENV})
+set(NLOPT_DIR ${CONDA_ENV})
 find_package(RDKit REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(Threads REQUIRED)
+find_package(NLopt REQUIRED)
 
 # source list
 set(SOURCES
@@ -67,6 +70,7 @@ target_include_directories(ternify
         ${CMAKE_CURRENT_SOURCE_DIR}/src
         ${RDKit_INCLUDE_DIRS}
         ${EIGEN3_INCLUDE_DIR}
+        ${NLOPT_INCLUDE_DIRS} 
 )
 
 # link libraries
@@ -88,6 +92,7 @@ target_link_libraries(ternify
         RDKitDistGeomHelpers
         Eigen3::Eigen
         Threads::Threads
+        nlopt
 )
 
 # installation rules

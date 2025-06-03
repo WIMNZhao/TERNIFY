@@ -27,6 +27,8 @@
 #include <chrono>
 #include <iomanip>
 
+#include <nlopt.hpp>
+
 
 class Protac {
 public:
@@ -62,17 +64,18 @@ public:
               RDKit::ROMol* w_anch,
               RDKit::ROMol* w_flex,
               const std::string& fpro_flex,
-              bool verbose = false);
+              int verbose = 0);
     // 采样相关函数
     Solution sample_single();
-    void sample(int ntotal = 100, int nsolu = 100, bool verbose = false);
-    void search(bool verbose = false);
+    void sample(int ntotal = 100, int nsolu = 100, int verbose = 0);
+    void search(int verbose = 0);
     double e_intra(const RDKit::ROMol* mol) const;
     double score(const std::vector<double>& dihe);
     
     // 新增score_only功能
-    double score_only(bool verbose = false);
-    double score_only(const std::vector<double>& dihe, bool verbose = false);
+    double score_only(int verbose = 0);
+    double score_only(const std::vector<double>& dihe, int verbose = 0);
+    Solution local_only(const std::vector<double>& dihe, RDKit::ROMol* mol_copy, int verbose = 0);
     // Thread-safe scoring function with detailed energy components
     EnergyComponents thread_safe_score_detailed(const std::vector<double>& dihe, RDKit::ROMol* mol_copy);
         
@@ -143,34 +146,32 @@ private:
 
     void list(const std::vector<int>& warheads, 
               const std::vector<std::pair<int, int>>& rbond,
-              bool print_info = false);
+              int verbose = 0);
     
     // 对齐相关的私有函数
-    void alignProtacToFlexWarhead(RDKit::ROMol* w_flex, bool verbose = false);
-    void alignProtacToAnchorWarhead(RDKit::ROMol* w_anch, bool verbose = false);
+    void alignProtacToFlexWarhead(RDKit::ROMol* w_flex, int verbose = 0);
+    void alignProtacToAnchorWarhead(RDKit::ROMol* w_anch, int verbose = 0);
     
     // 可旋转键和二面角查找函数
-    void findRotatableDihedrals(const std::vector<int>& linker, bool verbose = false);
+    void findRotatableDihedrals(const std::vector<int>& linker, int verbose = 0);
     
     void calHeavyAtomsCharge(RDKit::ROMol& mol);
     // 电荷和氢键类型计算函数
-    void calculateQAnchor(const std::vector<int>& hb_donors, const std::vector<int>& hb_acceptors, bool verbose = false);
-    void calculateQFlex(const std::vector<int>& hb_donors, const std::vector<int>& hb_acceptors, bool verbose = false);
+    void calculateQAnchor(const std::vector<int>& hb_donors, const std::vector<int>& hb_acceptors, int verbose = 0);
+    void calculateQFlex(const std::vector<int>& hb_donors, const std::vector<int>& hb_acceptors, int verbose = 0);
     
     // 氢键供受体识别函数
-    std::pair<std::vector<int>, std::vector<int>> findHB_DA(bool verbose = false);
+    std::pair<std::vector<int>, std::vector<int>> findHB_DA(int verbose = 0);
     
     // 坐标系统设置函数
-    void setupCoordinateSystem(RDKit::ROMol* w_flex, const std::string& fpro_flex, bool verbose = false);
+    void setupCoordinateSystem(RDKit::ROMol* w_flex, const std::string& fpro_flex, int verbose = 0);
     
     // Linker原子识别函数
-    std::vector<int> findLinkerAtoms(bool verbose = false);
+    std::vector<int> findLinkerAtoms(int verbose = 0);
     
     // 能量组分详细输出的辅助函数
     void printEnergyComponents(const RDKit::ROMol& mol, 
-                              const std::vector<double>& dihedrals, 
-                              double total_energy, 
-                              bool is_custom_dihedrals);
+                              double total_energy);
     
     // 扫描单个二面角的低能构象
     std::vector<double> scanTorsion(double v1, double v2, double v3);
@@ -182,7 +183,8 @@ private:
     std::uniform_real_distribution<double> uniform_dist_;
 
     // Powell最小化的辅助函数
-    Solution powell_minimize(const std::vector<double>& initial_guess, RDKit::ROMol* mol_copy, double tol = 0.01);
+    static double functionForNLopt(const std::vector<double>& x, std::vector<double>& grad, void* data);
+    Solution energy_minimize(const std::vector<double>& initial_guess, RDKit::ROMol* mol_copy, double tol = 0.01);
     Solution search_single(const Solution& initial_solution);
 
     //

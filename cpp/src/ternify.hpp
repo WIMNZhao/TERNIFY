@@ -19,6 +19,7 @@ struct Parameters {
     int n_processes = 1;
     int verbose = 0;
     bool score_only = false;
+    bool local_only = false;
     VolRegion interface;
 };
 
