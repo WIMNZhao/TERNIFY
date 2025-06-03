@@ -1173,7 +1173,7 @@ void Protac::output(RDKit::SDWriter& w,
                 if (output_count >= nKeep) break;
             
                     outputSingleConformation(solutions_[rep_idx], w, fpro, output_count + 1, fpro_w,
-                                        "CLUSTER_SIZE", std::to_string(cluster_size));
+                                        "Cluster_Size", std::to_string(cluster_size));
                     output_count++;
                 }
         } else {
@@ -1347,7 +1347,7 @@ Protac::Solution Protac::energy_minimize(const std::vector<double>& initial_gues
     return current;
 }
 
-Protac::Solution Protac::local_only(const std::vector<double>& dihe, RDKit::ROMol* mol_copy, int verbose) {
+Protac::Solution Protac::local_only(const std::vector<double>& dihe, RDKit::ROMol* mol_copy) {
     // 参数验证
     if (dihe.size() != rot_dihe_.size()) {
         throw std::runtime_error("Dihedral angles size (" + std::to_string(dihe.size()) 

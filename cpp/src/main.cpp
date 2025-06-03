@@ -227,11 +227,10 @@ void run_ternify(const Parameters& params) {
         mol = std::unique_ptr<RDKit::ROMol>(protacs_supplier[protac_index]);
         // Check if the molecule was successfully read and matches the substructure
         if (mol) {
-            if (params.verbose > 0) {
-                std::cout << "\n=== Processing PROTAC molecule " << (protac_index + 1) << " of " << total_protacs << " ===" << std::endl;
-                std::cout << "READ: Number of atoms in protac: " << mol->getNumAtoms() << std::endl;
-                std::cout << "READ: Number of bonds in protac: " << mol->getNumBonds() << std::endl;
-            }
+            std::cout << "\n=== Processing PROTAC molecule " << (protac_index + 1) << " of " << total_protacs << " ===" << std::endl;
+            std::cout << "READ["<< (protac_index + 1) <<"]: Number of atoms in protac: " << mol->getNumAtoms() << std::endl;
+            std::cout << "READ["<< (protac_index + 1) <<"]: Number of bonds in protac: " << mol->getNumBonds() << std::endl;
+            
             if (RDKit::SubstructMatch(*mol, *w_anch).empty() || 
                 RDKit::SubstructMatch(*mol, *w_flex).empty() ){
                 std::cout << "WARNING: Skipping molecule " << protac_index + 1 << ": this protac does not match substructures with anch/flex." << std::endl;
@@ -360,7 +359,7 @@ int main(int argc, char* argv[]) {
                   << "|---------------------------------------------------------------|\n"
                   << "|Hongtao Zhao, PhD                                              |\n"
                   << "|Ximing XU, PhD [C++] xuximing@ouc.edu.cn                       |\n" 
-                  << "|Version: 2025.06.02                                            |\n" 
+                  << "|Version: 2025.06.03                                            |\n" 
                   << "+---------------------------------------------------------------+\n"
                   << std::endl;
 

@@ -25,7 +25,7 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra")
 #set(CMAKE_CXX_FLAGS_DEBUG "-g -O0")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 
-# set rdkit lib !!!!
+# set rdkit, nlopt lib !!!!
 set(CONDA_ENV "/opt/anaconda3/envs/ternify/")
 link_directories(${CONDA_ENV}/lib)
 set(RDKIT_DIR ${CONDA_ENV})

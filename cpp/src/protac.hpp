@@ -75,7 +75,7 @@ public:
     // 新增score_only功能
     double score_only(int verbose = 0);
     double score_only(const std::vector<double>& dihe, int verbose = 0);
-    Solution local_only(const std::vector<double>& dihe, RDKit::ROMol* mol_copy, int verbose = 0);
+    Solution local_only(const std::vector<double>& dihe, RDKit::ROMol* mol_copy);
     // Thread-safe scoring function with detailed energy components
     EnergyComponents thread_safe_score_detailed(const std::vector<double>& dihe, RDKit::ROMol* mol_copy);
         

@@ -63,12 +63,14 @@ conda update -c conda-forge cmake   # ensures cmake >= 3.3, default is 4.0.2
 
 #### 3. Configure CMakeLists.txt
 
-Before compilation, modify the `CMakeLists.txt` file to set the correct RDKit paths if necessary:
+Before compilation, modify the `CMakeLists.txt` file to set the correct Conda environment path if necessary:
 
 ```cmake
-# Set RDKit library path (adjust path to your conda environment)
-link_directories(/opt/anaconda3/envs/ternify/lib)
-set(RDKIT_DIR "/opt/anaconda3/envs/ternify/")
+# Set RDKit, NLopt library paths (adjust paths to your conda environment)
+set(CONDA_ENV "/opt/anaconda3/envs/ternify/")
+link_directories(${CONDA_ENV}/lib)
+set(RDKIT_DIR ${CONDA_ENV})
+set(NLOPT_DIR ${CONDA_ENV})
 ```
 
 **Note**: Replace `/opt/anaconda3/envs/ternify/` with your actual conda environment path. You can find it using:
@@ -86,10 +88,13 @@ export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
 #### 4. Compile TERNIFY
 
 ```
-# modify the rdkit and rdkit lib path in `CMakeLists.txt`
+# modify the rdkit, rdkit lib, nlopt lib paths in `CMakeLists.txt`
 
-link_directories(/opt/anaconda3/envs/ternify/lib)
-set(RDKIT_DIR "/opt/anaconda3/envs/ternify/")
+# set rdkit, nlopt lib !!!!
+set(CONDA_ENV "/opt/anaconda3/envs/ternify/")
+link_directories(${CONDA_ENV}/lib)
+set(RDKIT_DIR ${CONDA_ENV})
+set(NLOPT_DIR ${CONDA_ENV})
 
 # compile ternify
 conda activate ternify
@@ -188,7 +193,8 @@ Verbose: 1            # Verbose level (<1 quiet, >0 moderate, >1 detailed)
 ### Verbose Modes
 
 - **Verbose: 0** - Minimal output, only essential information
-- **Verbose: 1** - Progress bars, energy breakdown, and structural analysis, Detailed force field parameters and debugging information
+- **Verbose: 1** - Progress bars, energy breakdown information
+- **Verbose: 2** - Structural analysis, Detailed force field parameters and debugging information
 
 ## Output Files
 
@@ -283,6 +289,6 @@ This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENS
 ## Contact
 
 - **Hongtao Zhao, PhD** - Principal Developer
-- **Ximing Xu, PhD** - C++ Implementation Lead
+- **Ximing Xu, PhD** - C++ Implementation Lead xuximing@ouc.edu.cn
 
 For questions and support, please open an issue on GitHub or contact the development team.
